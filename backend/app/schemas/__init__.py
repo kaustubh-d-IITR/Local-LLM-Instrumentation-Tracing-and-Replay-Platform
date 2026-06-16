@@ -1,7 +1,7 @@
 from app.schemas.session import SessionCreate, SessionResponse
 from app.schemas.topology import TopologyResponse
 from app.schemas.metric import MetricResponse
-from app.schemas.attention import AttentionResponse
+from app.schemas.attention_summary import AttentionSummaryResponse
 from app.schemas.activation import ActivationResponse
 from app.schemas.anomaly import AnomalyResponse
 from app.schemas.memory import MemoryResponse
@@ -12,7 +12,7 @@ __all__ = [
     "SessionResponse",
     "TopologyResponse",
     "MetricResponse",
-    "AttentionResponse",
+    "AttentionSummaryResponse",
     "ActivationResponse",
     "AnomalyResponse",
     "MemoryResponse",
