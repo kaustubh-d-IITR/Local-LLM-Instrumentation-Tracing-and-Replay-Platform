@@ -11,6 +11,11 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d telemetry_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   backend:
     build:
@@ -22,10 +27,18 @@ services:
       - ENABLE_LATENCY=True
       - ENABLE_ACTIVATIONS=True
       - ENABLE_ANOMALIES=True
+      - HF_HOME=/root/.cache/huggingface
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     volumes:
       - ./backend:/app
+      - huggingface_cache:/root/.cache/huggingface
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
 
   frontend:
     build:
@@ -38,7 +51,9 @@ services:
     environment:
       - VITE_API_URL=http://localhost:8000
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
 
 volumes:
   postgres_data:
+  huggingface_cache:
