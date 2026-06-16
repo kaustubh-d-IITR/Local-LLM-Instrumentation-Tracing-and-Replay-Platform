@@ -7,7 +7,8 @@ from app.api.endpoints import (
     activations,
     anomalies,
     memory,
-    tokens
+    tokens,
+    ws
 )
 
 api_router = APIRouter()
@@ -20,3 +21,4 @@ api_router.include_router(activations.router, prefix="/sessions", tags=["activat
 api_router.include_router(anomalies.router, prefix="/sessions", tags=["anomalies"])
 api_router.include_router(memory.router, prefix="/sessions", tags=["memory"])
 api_router.include_router(tokens.router, prefix="/sessions", tags=["tokens"])
+api_router.include_router(ws.router, prefix="/ws", tags=["websocket"])

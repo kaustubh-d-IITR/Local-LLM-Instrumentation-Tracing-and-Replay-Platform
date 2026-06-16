@@ -15,3 +15,11 @@ def start_session(
     Creates an inference tracing session.
     """
     return session_service.start_session(db=db, session_in=session_in)
+
+@router.get("/{session_id}/topology")
+def get_topology(session_id: str):
+    """
+    Returns the real-time topology extracted from the loaded model.
+    """
+    return session_service.get_topology(session_id)
+

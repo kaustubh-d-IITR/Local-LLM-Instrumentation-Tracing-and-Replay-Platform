@@ -1,10 +1,10 @@
 from pydantic import BaseModel
 
 class ActivationBase(BaseModel):
-    layer_index: int
+    layer: int
     mean: float
-    max_val: float
-    min_val: float
+    max: float
+    min: float
     variance: float
     sparsity: float
 

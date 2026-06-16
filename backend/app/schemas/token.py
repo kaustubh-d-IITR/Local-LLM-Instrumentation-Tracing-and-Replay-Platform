@@ -1,11 +1,12 @@
 from pydantic import BaseModel
-from typing import Any
 
 class TokenBase(BaseModel):
-    timeline: list[Any]
+    idx: int
+    token: str
+    ms: float
 
 class TokenResponse(TokenBase):
     id: int
     session_id: str
 
-    model_config = {"from_attributes": True}
+    model_config = {"from_attributes": True, "populate_by_name": True}

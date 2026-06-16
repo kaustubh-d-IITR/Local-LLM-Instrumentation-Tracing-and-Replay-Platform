@@ -1,14 +1,17 @@
 from pydantic import BaseModel
 
 class MetricBase(BaseModel):
-    block_index: int
-    latency: float
-    tensor_shape: str
-    device: str
+    id: str
+    t: float
+    layer: int
+    op: str
+    dur_ms: float
+    shape: str
     dtype: str
+    device: str
+    level: str
 
 class MetricResponse(MetricBase):
-    id: int
     session_id: str
 
     model_config = {"from_attributes": True}

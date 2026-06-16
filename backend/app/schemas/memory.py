@@ -1,9 +1,9 @@
 from pydantic import BaseModel
 
 class MemoryBase(BaseModel):
-    gpu_memory: float
-    cpu_memory: float
-    vram_utilization: float
+    t: float
+    gpu: float
+    cpu: float
 
 class MemoryResponse(MemoryBase):
     id: int

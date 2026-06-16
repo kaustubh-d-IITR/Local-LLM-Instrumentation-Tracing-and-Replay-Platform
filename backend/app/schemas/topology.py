@@ -1,11 +1,8 @@
 from pydantic import BaseModel
+from typing import Any
 
 class TopologyBase(BaseModel):
-    embedding_layer: str
-    transformer_blocks: int
-    attention_layers: int
-    feed_forward_layers: int
-    layer_norm_layers: int
+    blocks: list[Any]
 
 class TopologyResponse(TopologyBase):
     id: int

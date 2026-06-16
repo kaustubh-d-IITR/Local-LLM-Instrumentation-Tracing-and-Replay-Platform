@@ -1,13 +1,13 @@
 from pydantic import BaseModel
 
 class AnomalyBase(BaseModel):
-    activation_spikes: int
-    cpu_fallback: bool
-    memory_warnings: int
-    latency_warnings: int
+    id: str
+    t: float
+    severity: str
+    layer: int
+    message: str
 
 class AnomalyResponse(AnomalyBase):
-    id: int
     session_id: str
 
     model_config = {"from_attributes": True}
