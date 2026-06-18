@@ -6,6 +6,8 @@ from sqlalchemy import pool
 from alembic import context
 from app.core.config import settings
 from app.models.base import Base
+# Explicitly import all models to ensure they register with Base.metadata
+import app.models
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -33,6 +35,10 @@ if not db_url:
 parsed_url = urlparse(db_url)
 logger = logging.getLogger("alembic.env")
 logger.info(f"Alembic successfully resolved connection string. Host target: {parsed_url.hostname}")
+
+# Print all discovered tables from Base.metadata to prove models are registered
+discovered_tables = list(Base.metadata.tables.keys())
+logger.info(f"Discovered tables in Base.metadata: {discovered_tables}")
 
 # overwrite sqlalchemy.url
 config.set_main_option("sqlalchemy.url", db_url)
@@ -64,6 +70,12 @@ def run_migrations_online() -> None:
         )
 
         with context.begin_transaction():
+            # Add requested startup logging
+            current_rev = context.get_context().get_current_revision()
+            head_rev = context.get_head_revision()
+            logger.info(f"Current Alembic revision: {current_rev}")
+            logger.info(f"Target Alembic revision: {head_rev}")
+            
             context.run_migrations()
 
 if context.is_offline_mode():
