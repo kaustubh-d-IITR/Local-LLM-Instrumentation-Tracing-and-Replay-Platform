@@ -24,3 +24,6 @@ class BaseRepository(Generic[ModelType, CreateSchemaType]):
         db.commit()
         db.refresh(db_obj)
         return db_obj
+
+# Backward compatibility alias for legacy scripts and imports
+CRUDBase = BaseRepository
