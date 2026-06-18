@@ -1,6 +1,5 @@
 import asyncio
 import time
-import torch
 import psutil
 from typing import Any
 from abc import ABC, abstractmethod
@@ -96,10 +95,13 @@ class MemoryCollector(TelemetryCollector):
         while self._running:
             cpu_gb = psutil.virtual_memory().used / (1024 ** 3)
             
-            if torch.cuda.is_available():
-                gpu_gb = torch.cuda.memory_allocated() / (1024 ** 3)
-            else:
-                gpu_gb = 0.0
+            gpu_gb = 0.0
+            try:
+                import torch
+                if torch.cuda.is_available():
+                    gpu_gb = torch.cuda.memory_allocated() / (1024 ** 3)
+            except ImportError:
+                pass
 
             event = MemoryEvent(
                 session_id=self.context.session_id,

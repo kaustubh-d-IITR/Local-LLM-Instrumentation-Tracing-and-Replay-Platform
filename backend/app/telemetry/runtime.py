@@ -1,8 +1,6 @@
 import asyncio
 import time
 from typing import Dict, Any, Tuple, AsyncGenerator
-import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer, TextIteratorStreamer
 from threading import Thread
 
 # Model Cache to prevent redundant reloads
@@ -12,8 +10,7 @@ _MODEL_CACHE: Dict[str, Tuple[Any, Any]] = {}
 class ModelRuntime:
     def __init__(self, model_name: str, device: str = None):
         self.model_name = model_name
-        # Fallback to cpu if cuda is unavailable
-        self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = device
         self.model = None
         self.tokenizer = None
 
@@ -27,6 +24,15 @@ class ModelRuntime:
             return
 
         def _load():
+            try:
+                import torch
+                from transformers import AutoModelForCausalLM, AutoTokenizer
+            except ImportError:
+                raise RuntimeError("ML dependencies (torch, transformers) are missing.")
+                
+            if self.device is None:
+                self.device = "cuda" if torch.cuda.is_available() else "cpu"
+                
             hf_id = self._get_hf_id(self.model_name)
             tokenizer = AutoTokenizer.from_pretrained(hf_id)
             model = AutoModelForCausalLM.from_pretrained(hf_id).to(self.device)
@@ -52,6 +58,11 @@ class ModelRuntime:
         if not self.model or not self.tokenizer:
             raise RuntimeError("Model not loaded.")
 
+        try:
+            from transformers import TextIteratorStreamer
+        except ImportError:
+            raise RuntimeError("ML dependencies are missing.")
+            
         inputs = self.tokenizer([prompt], return_tensors="pt").to(self.device)
         streamer = TextIteratorStreamer(self.tokenizer, skip_prompt=True)
         

@@ -1,5 +1,4 @@
 import time
-import torch
 from ..hook_result import HookResult
 from ..aggregator import TelemetryAggregator
 from ..config import telemetry_config
@@ -18,6 +17,7 @@ class ActivationHook:
 
         tensor_ref = output[0] if isinstance(output, tuple) else output
         
+        import torch
         if not isinstance(tensor_ref, torch.Tensor):
             return
 

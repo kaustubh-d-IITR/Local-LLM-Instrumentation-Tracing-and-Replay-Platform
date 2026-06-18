@@ -1,5 +1,4 @@
 import time
-import torch
 from ..hook_result import HookResult
 from ..aggregator import TelemetryAggregator
 from ..config import telemetry_config
@@ -32,6 +31,7 @@ class LatencyHook:
 
         # Safe extraction of shape/device/dtype
         tensor_ref = output[0] if isinstance(output, tuple) else output
+        import torch
         if isinstance(tensor_ref, torch.Tensor):
             shape_str = str(list(tensor_ref.shape))
             device_str = str(tensor_ref.device)
