@@ -1,6 +1,6 @@
 import asyncio
 import time
-import psutil
+
 from typing import Any
 from abc import ABC, abstractmethod
 from .context import TelemetryContext
@@ -93,7 +93,13 @@ class MemoryCollector(TelemetryCollector):
 
     async def _poll_loop(self):
         while self._running:
-            cpu_gb = psutil.virtual_memory().used / (1024 ** 3)
+            cpu_gb = 0.0
+            try:
+                import psutil
+                cpu_gb = psutil.virtual_memory().used / (1024 ** 3)
+            except ImportError:
+                # Graceful fallback if psutil is not installed
+                pass
             
             gpu_gb = 0.0
             try:
