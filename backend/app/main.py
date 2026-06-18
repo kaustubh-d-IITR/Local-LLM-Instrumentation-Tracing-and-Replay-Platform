@@ -18,6 +18,15 @@ app = FastAPI(
 @app.on_event("startup")
 async def startup_event():
     validate_environment()
+    
+    # Log ML dependency status as requested
+    try:
+        import torch
+        import transformers
+        logging.info(f"ML Dependency Status: torch=={torch.__version__}, transformers=={transformers.__version__}")
+        logging.info(f"CUDA Available: {torch.cuda.is_available()}")
+    except ImportError as e:
+        logging.error(f"Failed to load ML dependencies during startup: {e}")
 
 # Set all CORS enabled origins
 app.add_middleware(

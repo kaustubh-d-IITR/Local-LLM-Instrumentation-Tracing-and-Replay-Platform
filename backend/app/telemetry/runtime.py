@@ -34,8 +34,17 @@ class ModelRuntime:
                 self.device = "cuda" if torch.cuda.is_available() else "cpu"
                 
             hf_id = self._get_hf_id(self.model_name)
+            
+            import logging
+            logger = logging.getLogger(__name__)
+            
+            logger.info(f"Loading tokenizer for {hf_id}...")
             tokenizer = AutoTokenizer.from_pretrained(hf_id)
+            
+            logger.info(f"Loading model {hf_id} to device {self.device}...")
             model = AutoModelForCausalLM.from_pretrained(hf_id).to(self.device)
+            
+            logger.info(f"Model loaded successfully: {hf_id}")
             return model, tokenizer
 
         self.model, self.tokenizer = await asyncio.to_thread(_load)
