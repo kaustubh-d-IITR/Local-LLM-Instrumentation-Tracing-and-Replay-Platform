@@ -8,10 +8,13 @@ def validate_environment() -> None:
     Validates that required environment variables are present.
     Logs warnings instead of crashing to allow safe fallbacks.
     """
-    required_vars = [
-        "SQLALCHEMY_DATABASE_URI"
-    ]
+    required_vars = []
     
+    # Either DATABASE_URL (Railway) or SQLALCHEMY_DATABASE_URI (Local/Docker) must be present
+    if not os.getenv("DATABASE_URL") and not os.getenv("SQLALCHEMY_DATABASE_URI"):
+        logger.error("CRITICAL: Neither DATABASE_URL nor SQLALCHEMY_DATABASE_URI found in environment variables.")
+        logger.error("The application may fail to start or connect to the database.")
+        
     optional_vars = {
         "ENABLE_LATENCY": "True",
         "ENABLE_ACTIVATIONS": "True",
@@ -22,15 +25,6 @@ def validate_environment() -> None:
         "TELEMETRY_SAMPLE_RATE": "1.0",
         "HF_HOME": "/root/.cache/huggingface"
     }
-
-    missing_required = []
-    for var in required_vars:
-        if not os.getenv(var):
-            missing_required.append(var)
-            
-    if missing_required:
-        logger.error(f"CRITICAL: Missing required environment variables: {', '.join(missing_required)}")
-        logger.error("The application may fail to start or connect to the database.")
 
     missing_optional = []
     for var, default in optional_vars.items():

@@ -16,12 +16,26 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
+import logging
+from urllib.parse import urlparse
+
 # add your model's MetaData object here
 # for 'autogenerate' support
 target_metadata = Base.metadata
 
+# Resolve the database URL
+db_url = settings.SQLALCHEMY_DATABASE_URI
+if not db_url:
+    import os
+    db_url = os.getenv("DATABASE_URL", "").replace("postgres://", "postgresql://", 1)
+
+# Log the resolved host to ensure we aren't defaulting to localhost in production
+parsed_url = urlparse(db_url)
+logger = logging.getLogger("alembic.env")
+logger.info(f"Alembic successfully resolved connection string. Host target: {parsed_url.hostname}")
+
 # overwrite sqlalchemy.url
-config.set_main_option("sqlalchemy.url", settings.SQLALCHEMY_DATABASE_URI)
+config.set_main_option("sqlalchemy.url", db_url)
 
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode."""
