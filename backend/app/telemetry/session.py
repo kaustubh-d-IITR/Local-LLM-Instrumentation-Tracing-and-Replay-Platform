@@ -10,7 +10,7 @@ from .sinks import DatabaseSink, WebSocketSink
 from .collectors import MemoryCollector, MetricCollector
 from .aggregator import TelemetryAggregator
 from .anomaly_engine import AnomalyEngine
-from .events import SessionEvent, ModelRuntimeState, TokenEvent, MemoryEvent, MetricEvent, ActivationEvent, AnomalyEvent
+from .events import SessionEvent, ModelRuntimeState, TokenEvent, MemoryEvent, MetricEvent, ActivationEvent, AnomalyEvent, TopologyEvent
 import logging
 
 logger = logging.getLogger(__name__)
@@ -33,7 +33,7 @@ class SessionManager:
         self.db_sink = DatabaseSink()
         
         # Core Events -> Sinks
-        for event_type in [TokenEvent, MemoryEvent, SessionEvent, MetricEvent, ActivationEvent, AnomalyEvent]:
+        for event_type in [TokenEvent, MemoryEvent, SessionEvent, MetricEvent, ActivationEvent, AnomalyEvent, TopologyEvent]:
             self.event_bus.subscribe(event_type, self.ws_sink)
             if event_type is not SessionEvent:
                 self.event_bus.subscribe(event_type, self.db_sink)
@@ -85,6 +85,14 @@ class SessionManager:
             
             # Attach hooks
             self.hook_registry.attach_all()
+
+            # Broadcast topology
+            logger.info(f"Extracting and publishing topology for session {self.context.session_id}")
+            topology_data = self.topology_extractor.extract()
+            await self.event_bus.publish(TopologyEvent(
+                session_id=self.context.session_id,
+                blocks=topology_data["blocks"]
+            ))
 
             # Broadcast ready
             await self.event_bus.publish(SessionEvent(

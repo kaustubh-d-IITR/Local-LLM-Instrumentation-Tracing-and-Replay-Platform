@@ -37,11 +37,7 @@ class SessionService:
         
         return db_session
 
-    @staticmethod
-    def get_topology(session_id: str) -> dict:
-        if session_id in active_managers and active_managers[session_id].topology_extractor:
-            return active_managers[session_id].topology_extractor.extract()
-        return {"blocks": []}
+
 
 session_service = SessionService()
 

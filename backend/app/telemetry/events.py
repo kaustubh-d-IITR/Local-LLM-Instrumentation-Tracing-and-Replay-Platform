@@ -62,3 +62,6 @@ class AnomalyEvent(BaseTelemetryEvent):
     severity: Literal["info", "warn", "error"]
     layer: int
     message: str
+
+class TopologyEvent(BaseTelemetryEvent):
+    blocks: list
