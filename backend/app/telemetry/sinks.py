@@ -9,6 +9,9 @@ from app.models.memory import Memory
 from app.models.metric import Metric
 from app.models.activation import Activation
 from app.models.anomaly import Anomaly
+import logging
+
+logger = logging.getLogger(__name__)
 
 class BaseSink(ABC):
     """
@@ -48,8 +51,14 @@ class DatabaseSink(BaseSink):
                     ))
                 db.commit()
                 
-        # Fire and forget database insert
-        asyncio.create_task(asyncio.to_thread(_insert))
+        # Fire and forget database insert, with error logging attached to the task
+        task = asyncio.create_task(asyncio.to_thread(_insert))
+        def on_done(t):
+            try:
+                t.result()
+            except Exception as e:
+                logger.error(f"Database sink error during insert: {e}", exc_info=True)
+        task.add_done_callback(on_done)
 
 class WebSocketSink(BaseSink):
     """

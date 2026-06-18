@@ -1,4 +1,6 @@
 import asyncio
+import logging
+from fastapi import BackgroundTasks
 from typing import Dict
 from sqlalchemy.orm import Session
 from app.repositories.session import session_repo
@@ -8,10 +10,11 @@ from app.telemetry.session import SessionManager
 
 # Global dictionary of active session managers
 active_managers: Dict[str, SessionManager] = {}
+logger = logging.getLogger(__name__)
 
 class SessionService:
     @staticmethod
-    def start_session(db: Session, session_in: SessionCreate) -> SessionModel:
+    def start_session(db: Session, session_in: SessionCreate, background_tasks: BackgroundTasks) -> SessionModel:
         # Create DB record
         db_session = session_repo.create(db=db, obj_in=session_in)
         
@@ -22,8 +25,11 @@ class SessionService:
         )
         active_managers[db_session.id] = manager
         
+        logger.info(f"Starting session {db_session.id} for model {session_in.model_name}")
+        
         # Start async background task for model loading and generation
-        asyncio.create_task(manager.start_async(session_in.prompt))
+        # Use FastAPI BackgroundTasks so this properly schedules on the main event loop
+        background_tasks.add_task(manager.start_async, session_in.prompt)
         
         # Set status to starting and return immediately
         db_session.status = "starting"

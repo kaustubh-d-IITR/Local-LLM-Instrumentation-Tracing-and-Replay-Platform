@@ -11,6 +11,9 @@ from .collectors import MemoryCollector, MetricCollector
 from .aggregator import TelemetryAggregator
 from .anomaly_engine import AnomalyEngine
 from .events import SessionEvent, ModelRuntimeState, TokenEvent, MemoryEvent, MetricEvent, ActivationEvent, AnomalyEvent
+import logging
+
+logger = logging.getLogger(__name__)
 
 class SessionManager:
     """
@@ -57,67 +60,74 @@ class SessionManager:
         """
         Initializes sinks, loads model async, and starts generation.
         """
-        # Broadcast loading
-        await self.event_bus.publish(SessionEvent(
-            session_id=self.context.session_id, 
-            type="model_loading", 
-            state=ModelRuntimeState.LOADING
-        ))
+        try:
+            # Broadcast loading
+            await self.event_bus.publish(SessionEvent(
+                session_id=self.context.session_id, 
+                type="model_loading", 
+                state=ModelRuntimeState.LOADING
+            ))
 
-        # Load model async
-        await self.runtime.load_model_async()
-        
-        # Initialize the synchronous aggregator bridging to the async MetricCollector
-        self.aggregator = TelemetryAggregator(
-            async_collector=self.metric_collector,
-            main_loop=asyncio.get_running_loop(),
-            flush_interval=0.5
-        )
+            # Load model async
+            await self.runtime.load_model_async()
+            
+            # Initialize the synchronous aggregator bridging to the async MetricCollector
+            self.aggregator = TelemetryAggregator(
+                async_collector=self.metric_collector,
+                main_loop=asyncio.get_running_loop(),
+                flush_interval=0.5
+            )
 
-        # Instantiate topology and hooks
-        self.adapter = self._resolve_adapter(self.runtime.model)
-        self.topology_extractor = TopologyExtractor(self.adapter)
-        self.hook_registry = HookRegistry(self.context, self.adapter, self.aggregator)
-        
-        # Attach hooks
-        self.hook_registry.attach_all()
+            # Instantiate topology and hooks
+            self.adapter = self._resolve_adapter(self.runtime.model)
+            self.topology_extractor = TopologyExtractor(self.adapter)
+            self.hook_registry = HookRegistry(self.context, self.adapter, self.aggregator)
+            
+            # Attach hooks
+            self.hook_registry.attach_all()
 
-        # Broadcast ready
-        await self.event_bus.publish(SessionEvent(
-            session_id=self.context.session_id, 
-            type="model_ready", 
-            state=ModelRuntimeState.READY
-        ))
-        
-        # Start Memory polling
-        self.memory_collector.start()
-
-        # Start generating
-        await self.event_bus.publish(SessionEvent(
-            session_id=self.context.session_id, 
-            type="generation_started", 
-            state=ModelRuntimeState.GENERATING
-        ))
-
-        # Stream tokens
-        async for token_idx, token_text, elapsed_ms in self.runtime.stream_generate(prompt):
-            await self.event_bus.publish(TokenEvent(
-                session_id=self.context.session_id,
-                idx=token_idx,
-                token=token_text,
-                ms=elapsed_ms
+            # Broadcast ready
+            await self.event_bus.publish(SessionEvent(
+                session_id=self.context.session_id, 
+                type="model_ready", 
+                state=ModelRuntimeState.READY
             ))
             
-        # Final flush of the aggregator
-        self.aggregator.flush()
+            # Start Memory polling
+            self.memory_collector.start()
 
-        await self.event_bus.publish(SessionEvent(
-            session_id=self.context.session_id, 
-            type="generation_finished", 
-            state=ModelRuntimeState.READY
-        ))
-        
-        self.memory_collector.stop()
+            # Start generating
+            logger.info(f"Background generation beginning for session {self.context.session_id}")
+            await self.event_bus.publish(SessionEvent(
+                session_id=self.context.session_id, 
+                type="generation_started", 
+                state=ModelRuntimeState.GENERATING
+            ))
+
+            # Stream tokens
+            async for token_idx, token_text, elapsed_ms in self.runtime.stream_generate(prompt):
+                await self.event_bus.publish(TokenEvent(
+                    session_id=self.context.session_id,
+                    idx=token_idx,
+                    token=token_text,
+                    ms=elapsed_ms
+                ))
+                
+            # Final flush of the aggregator
+            self.aggregator.flush()
+
+            await self.event_bus.publish(SessionEvent(
+                session_id=self.context.session_id, 
+                type="generation_finished", 
+                state=ModelRuntimeState.READY
+            ))
+            
+            logger.info(f"Generation completed for session {self.context.session_id}")
+            self.memory_collector.stop()
+            
+        except Exception as e:
+            logger.error(f"Error during background generation for session {self.context.session_id}: {e}", exc_info=True)
+            self.memory_collector.stop()
 
     def stop(self) -> None:
         """

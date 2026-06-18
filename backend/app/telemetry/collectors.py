@@ -11,6 +11,9 @@ import uuid
 from typing import List
 from .hook_result import HookResult
 from .events import MetricEvent, ActivationEvent
+import logging
+
+logger = logging.getLogger(__name__)
 
 class MetricCollector:
     """
@@ -85,6 +88,14 @@ class MemoryCollector(TelemetryCollector):
     def start(self):
         self._running = True
         self._task = asyncio.create_task(self._poll_loop())
+        def on_done(t):
+            try:
+                t.result()
+            except asyncio.CancelledError:
+                pass
+            except Exception as e:
+                logger.error(f"Memory polling task crashed: {e}", exc_info=True)
+        self._task.add_done_callback(on_done)
 
     def stop(self):
         self._running = False
