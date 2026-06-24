@@ -1,5 +1,4 @@
-from sqlalchemy import Column, String, Integer, ForeignKey
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import Column, String, Integer, ForeignKey, JSON
 from sqlalchemy.orm import relationship
 from app.models.base import Base
 
@@ -8,6 +7,6 @@ class Topology(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     session_id = Column(String, ForeignKey("sessions.id"), unique=True, nullable=False)
-    blocks = Column(JSONB, nullable=False)
+    blocks = Column(JSON, nullable=False)
 
     session = relationship("Session")
