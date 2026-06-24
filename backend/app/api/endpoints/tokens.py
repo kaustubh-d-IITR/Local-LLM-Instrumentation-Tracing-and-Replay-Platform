@@ -26,11 +26,13 @@ def get_tokens(
             return []
             
         logger.info(f"TOKEN COUNT: {len(tokens)}")
+        logger.info(f"Endpoint type: {type(tokens)}")
         # Safe dict conversion for logging avoiding SQLAlchemy state
         if tokens:
             logger.info(f"FIRST TOKEN TYPE: {type(tokens[0])}")
             logger.info(f"FIRST TOKEN ATTRS: {tokens[0].__dict__}")
         
+        assert isinstance(tokens, list), f"Expected list, got {type(tokens)}"
         return tokens
     except Exception:
         logger.exception("TOKENS ENDPOINT FAILURE")
