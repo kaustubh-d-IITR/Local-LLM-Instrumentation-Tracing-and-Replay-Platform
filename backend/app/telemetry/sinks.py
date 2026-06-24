@@ -34,7 +34,8 @@ class DatabaseSink(BaseSink):
                 try:
                     if isinstance(event, TokenEvent):
                         logger.info(f"Persisting {event_type} for session {event.session_id}")
-                        db.add(Token(session_id=event.session_id, idx=event.idx, token_text=event.token, ms=event.ms))
+                        db.add(Token(session_id=event.session_id, idx=event.idx, token=event.token, ms=event.ms))
+                        logger.info("Token persisted successfully")
                     elif isinstance(event, MemoryEvent):
                         logger.info(f"Persisting {event_type} for session {event.session_id}")
                         db.add(Memory(session_id=event.session_id, t=event.t, gpu=event.gpu, cpu=event.cpu))
