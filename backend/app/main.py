@@ -19,14 +19,15 @@ app = FastAPI(
 async def startup_event():
     validate_environment()
     
-    # Log ML dependency status as requested
-    try:
-        import torch
-        import transformers
-        logging.info(f"ML Dependency Status: torch=={torch.__version__}, transformers=={transformers.__version__}")
-        logging.info(f"CUDA Available: {torch.cuda.is_available()}")
-    except ImportError as e:
-        logging.error(f"Failed to load ML dependencies during startup: {e}")
+    # Do NOT import torch/transformers here.
+    # Each import adds ~200 MB to RSS, which leaves no headroom for
+    # model weights on Render Free Tier (512 MB cgroup limit).
+    # ML libraries are imported lazily on first inference request
+    # inside ModelRuntime._load().
+    logging.info(
+        "Startup complete. ML dependencies will be loaded "
+        "on first inference request to conserve memory."
+    )
 
 # Set all CORS enabled origins
 app.add_middleware(
