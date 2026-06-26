@@ -12,16 +12,6 @@ logger = logging.getLogger(__name__)
 # Key: model_name, Value: (model, tokenizer)
 _MODEL_CACHE: Dict[str, Tuple[Any, Any]] = {}
 
-# Disk offload directory for accelerate device_map
-_OFFLOAD_DIR = "/tmp/model_offload"
-
-# Maximum CPU memory (in MiB) accelerate may use for model weights.
-# Remaining layers are offloaded to disk and loaded per-forward-pass.
-# Render Free Tier has 512 MB total; at load time ~420 MB is already used
-# by Python + FastAPI + SQLAlchemy + torch + transformers.
-# Keeping this small ensures we never exceed the cgroup limit.
-_MAX_CPU_MEMORY = "80MiB"
-
 
 def _get_memory_mb() -> float:
     """Return current process RSS in MB. Returns 0 if psutil unavailable."""
@@ -33,7 +23,7 @@ def _get_memory_mb() -> float:
 
 
 def _get_available_mb() -> float:
-    """Return system available memory in MB. May not reflect cgroup limits."""
+    """Return system available memory in MB."""
     try:
         import psutil
         return psutil.virtual_memory().available / (1024 * 1024)
@@ -51,17 +41,17 @@ class ModelRuntime:
     async def load_model_async(self) -> None:
         """
         Loads the model asynchronously via asyncio.to_thread.
-        Uses accelerate device_map with disk offloading to stay within
-        Render's 512 MB RAM limit.
+        Uses low_cpu_mem_usage=True to load weights one-at-a-time,
+        keeping peak memory lower than a full state_dict load.
         """
         logger.info(f"[LOAD] Entering load_model_async model={self.model_name}")
 
         if self.model_name in _MODEL_CACHE:
-            logger.info(f"[LOAD] Cache HIT for '{self.model_name}', skipping download")
+            logger.info(f"[LOAD] Cache HIT for '{self.model_name}', skipping load")
             self.model, self.tokenizer = _MODEL_CACHE[self.model_name]
             return
 
-        logger.info(f"[LOAD] Cache MISS for '{self.model_name}', will load from HuggingFace")
+        logger.info(f"[LOAD] Cache MISS for '{self.model_name}', loading from HuggingFace")
 
         def _load():
             # ── Step 1: Import ML dependencies ──────────────────────────
@@ -104,12 +94,6 @@ class ModelRuntime:
                 f"[STEP 4] MEMORY SNAPSHOT  RSS={rss:.0f}MB  "
                 f"system_available={avail:.0f}MB"
             )
-            if rss > 400:
-                logger.warning(
-                    f"[STEP 4] RSS is already {rss:.0f}MB. "
-                    f"Will use device_map with disk offloading "
-                    f"(max_memory={_MAX_CPU_MEMORY}) to stay under 512MB."
-                )
 
             # Free any garbage before the heavy allocation
             gc.collect()
@@ -123,37 +107,22 @@ class ModelRuntime:
                 logger.exception(f"[STEP 5] FAILED  mem={_get_memory_mb():.0f}MB")
                 raise
 
-            # ── Step 6: Prepare offload directory ───────────────────────
-            logger.info(f"[STEP 6] Creating offload dir {_OFFLOAD_DIR}...")
-            try:
-                os.makedirs(_OFFLOAD_DIR, exist_ok=True)
-                logger.info(f"[STEP 6] OK")
-            except Exception:
-                logger.exception("[STEP 6] FAILED creating offload dir")
-                raise
-
-            # ── Step 7: Load model with device_map + disk offloading ────
+            # ── Step 6: Load model ──────────────────────────────────────
             #
-            # WHY device_map="auto" + offload_folder:
-            #   GPT-2 float32 = ~497 MB of weights.
-            #   Process RSS is already ~425 MB.
-            #   Loading the full model into CPU RAM would need ~920 MB → OOM.
+            # Strategy: load directly onto CPU with low_cpu_mem_usage=True.
+            # This creates the model skeleton on meta device, then loads
+            # each parameter individually from safetensors → CPU, avoiding
+            # the 2x peak memory of a full state_dict load.
             #
-            #   device_map="auto" with max_memory tells accelerate to keep
-            #   at most 80 MiB of weights on CPU. The remaining layers are
-            #   serialized to /tmp/model_offload/ and loaded per-forward-pass.
+            # torch.float32 = native safetensors format → no conversion.
             #
-            # WHY torch.float32:
-            #   The safetensors file stores weights in float32.
-            #   Using float32 avoids an in-memory dtype conversion that would
-            #   temporarily double the memory for each tensor.
-            #   bfloat16 saves space but the conversion itself can cause the
-            #   OOM spike that kills the Render process.
+            # We do NOT use device_map="auto" because accelerate's auto
+            # device map with max_memory leaves parameters on meta device
+            # when CPU budget is too small, causing:
+            #   "Tensor.item() cannot be called on meta tensors"
             #
             logger.info(
-                f"[STEP 7] AutoModelForCausalLM.from_pretrained('{hf_id}', "
-                f"device_map='auto', max_memory={_MAX_CPU_MEMORY}, "
-                f"offload_folder='{_OFFLOAD_DIR}', "
+                f"[STEP 6] AutoModelForCausalLM.from_pretrained('{hf_id}', "
                 f"torch_dtype=float32, low_cpu_mem_usage=True)..."
             )
             try:
@@ -161,52 +130,48 @@ class ModelRuntime:
                     hf_id,
                     torch_dtype=torch.float32,
                     low_cpu_mem_usage=True,
-                    device_map="auto",
-                    offload_folder=_OFFLOAD_DIR,
-                    max_memory={"cpu": _MAX_CPU_MEMORY},
                 )
-                logger.info(f"[STEP 7] from_pretrained() OK  mem={_get_memory_mb():.0f}MB")
+                logger.info(f"[STEP 6] from_pretrained() OK  mem={_get_memory_mb():.0f}MB")
+            except Exception:
+                logger.exception(f"[STEP 6] FAILED  mem={_get_memory_mb():.0f}MB")
+                raise
+
+            # ── Step 7: Move to device ──────────────────────────────────
+            logger.info(f"[STEP 7] model.to('{self.device}')...")
+            try:
+                model = model.to(self.device)
+                logger.info(f"[STEP 7] OK  mem={_get_memory_mb():.0f}MB")
             except Exception:
                 logger.exception(f"[STEP 7] FAILED  mem={_get_memory_mb():.0f}MB")
                 raise
 
-            # ── Step 8: Log device map ──────────────────────────────────
-            if hasattr(model, "hf_device_map"):
-                dmap = model.hf_device_map
-                cpu_layers = [k for k, v in dmap.items() if v != "disk"]
-                disk_layers = [k for k, v in dmap.items() if v == "disk"]
-                logger.info(
-                    f"[STEP 8] Device map: {len(cpu_layers)} layers on CPU, "
-                    f"{len(disk_layers)} layers on disk"
-                )
-                logger.info(f"[STEP 8] CPU layers : {cpu_layers}")
-                logger.info(f"[STEP 8] Disk layers: {disk_layers}")
-            else:
-                logger.info("[STEP 8] No hf_device_map (model fully on CPU)")
-
-            # ── Step 9: Eval mode ───────────────────────────────────────
-            logger.info("[STEP 9] model.eval()...")
+            # ── Step 8: Eval mode ───────────────────────────────────────
+            logger.info("[STEP 8] model.eval()...")
             try:
                 model.eval()
-                logger.info(f"[STEP 9] OK  mem={_get_memory_mb():.0f}MB")
+                logger.info(f"[STEP 8] OK  mem={_get_memory_mb():.0f}MB")
             except Exception:
-                logger.exception(f"[STEP 9] FAILED  mem={_get_memory_mb():.0f}MB")
+                logger.exception(f"[STEP 8] FAILED  mem={_get_memory_mb():.0f}MB")
                 raise
 
-            # NOTE: Do NOT call model.to(device) — accelerate manages
-            # device placement via the dispatch hooks set up by device_map.
-            # self.device is used only for placing INPUT tensors on CPU.
-            self.device = "cpu"
+            # ── Step 9: Verify parameters are NOT on meta ───────────────
+            first_param = next(model.parameters())
+            param_device = str(first_param.device)
+            logger.info(f"[STEP 9] First parameter device: {param_device}")
+            if param_device == "meta":
+                raise RuntimeError(
+                    f"Model parameters are on 'meta' device after loading. "
+                    f"This means weights were never materialized."
+                )
 
             mem_final = _get_memory_mb()
             logger.info(
-                f"[LOAD COMPLETE] {hf_id} ready.  "
-                f"Final RSS={mem_final:.0f}MB  "
-                f"delta=+{mem_final - rss:.0f}MB"
+                f"[LOAD COMPLETE] {hf_id} ready on {param_device}.  "
+                f"Final RSS={mem_final:.0f}MB  delta=+{mem_final - rss:.0f}MB"
             )
             return model, tokenizer
 
-        # Dispatch the blocking _load() to a thread so the event loop stays free
+        # Dispatch blocking _load() to a thread so the event loop stays free
         logger.info("[LOAD] Dispatching _load() via asyncio.to_thread...")
         try:
             self.model, self.tokenizer = await asyncio.to_thread(_load)
@@ -250,9 +215,7 @@ class ModelRuntime:
         except ImportError:
             raise RuntimeError("ML dependencies are missing.")
 
-        # Inputs always go to CPU; accelerate dispatch hooks move data
-        # through CPU/disk layers automatically during model.generate().
-        inputs = self.tokenizer([prompt], return_tensors="pt").to("cpu")
+        inputs = self.tokenizer([prompt], return_tensors="pt").to(self.device)
         streamer = TextIteratorStreamer(self.tokenizer, skip_prompt=True)
 
         generation_kwargs = dict(
@@ -264,8 +227,7 @@ class ModelRuntime:
             temperature=0.7,
         )
 
-        # Run model.generate() in a background OS thread.
-        # accelerate's dispatch hooks work in any thread.
+        # Run model.generate() in a background OS thread
         thread = Thread(target=self.model.generate, kwargs=generation_kwargs)
         thread.start()
 
@@ -273,8 +235,7 @@ class ModelRuntime:
         start_time = time.time()
 
         # Pull tokens from the streamer via asyncio.to_thread so we don't
-        # block the main event loop on the threading.Condition inside the
-        # streamer's __next__().
+        # block the event loop on TextIteratorStreamer's threading.Condition
         while True:
             try:
                 new_text = await asyncio.to_thread(next, streamer)
