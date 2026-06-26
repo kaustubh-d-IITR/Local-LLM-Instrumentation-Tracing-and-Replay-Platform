@@ -60,6 +60,7 @@ class SessionManager:
         """
         Initializes sinks, loads model async, and starts generation.
         """
+        logger.info(f"START SESSION: {self.context.session_id}")
         try:
             # Broadcast loading
             await self.event_bus.publish(SessionEvent(
@@ -69,7 +70,9 @@ class SessionManager:
             ))
 
             # Load model async
+            logger.info("MODEL LOAD START")
             await self.runtime.load_model_async()
+            logger.info("MODEL LOAD COMPLETE")
             
             # Initialize the synchronous aggregator bridging to the async MetricCollector
             self.aggregator = TelemetryAggregator(
@@ -93,6 +96,7 @@ class SessionManager:
                 session_id=self.context.session_id,
                 blocks=topology_data["blocks"]
             ))
+            logger.info("TOPOLOGY SAVED")
 
             # Broadcast ready
             await self.event_bus.publish(SessionEvent(
@@ -106,6 +110,7 @@ class SessionManager:
 
             # Start generating
             logger.info(f"Background generation beginning for session {self.context.session_id}")
+            logger.info("TOKEN GENERATION START")
             await self.event_bus.publish(SessionEvent(
                 session_id=self.context.session_id, 
                 type="generation_started", 
@@ -113,13 +118,21 @@ class SessionManager:
             ))
 
             # Stream tokens
+            first_token_seen = False
             async for token_idx, token_text, elapsed_ms in self.runtime.stream_generate(prompt):
+                if not first_token_seen:
+                    logger.info("FIRST TOKEN GENERATED")
+                    first_token_seen = True
+                    
                 await self.event_bus.publish(TokenEvent(
                     session_id=self.context.session_id,
                     idx=token_idx,
                     token=token_text,
                     ms=elapsed_ms
                 ))
+                if token_idx == 0:
+                    logger.info("FIRST TOKEN SAVED")
+                logger.info("TOKEN SAVED")
                 
             # Final flush of the aggregator
             self.aggregator.flush()
@@ -131,10 +144,11 @@ class SessionManager:
             ))
             
             logger.info(f"Generation completed for session {self.context.session_id}")
+            logger.info("GENERATION COMPLETE")
             self.memory_collector.stop()
             
         except Exception as e:
-            logger.error(f"Error during background generation for session {self.context.session_id}: {e}", exc_info=True)
+            logger.exception(f"CRITICAL: Background generation failed for session {self.context.session_id}, model {self.context.model_name}")
             self.memory_collector.stop()
 
     def stop(self) -> None:

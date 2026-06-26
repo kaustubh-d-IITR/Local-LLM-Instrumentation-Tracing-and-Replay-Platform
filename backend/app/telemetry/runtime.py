@@ -1,5 +1,7 @@
 import asyncio
 import time
+import psutil
+import os
 from typing import Dict, Any, Tuple, AsyncGenerator
 from threading import Thread
 
@@ -38,12 +40,18 @@ class ModelRuntime:
             import logging
             logger = logging.getLogger(__name__)
             
+            process = psutil.Process(os.getpid())
+            mem_before = process.memory_info().rss / 1024 / 1024
+            logger.info(f"MEMORY LOG: {mem_before:.2f} MB before loading model")
+            
             logger.info(f"Loading tokenizer for {hf_id}...")
             tokenizer = AutoTokenizer.from_pretrained(hf_id)
             
             logger.info(f"Loading model {hf_id} to device {self.device}...")
             model = AutoModelForCausalLM.from_pretrained(hf_id).to(self.device)
             
+            mem_after = process.memory_info().rss / 1024 / 1024
+            logger.info(f"MEMORY LOG: {mem_after:.2f} MB after loading model")
             logger.info(f"Model loaded successfully: {hf_id}")
             return model, tokenizer
 
@@ -90,10 +98,16 @@ class ModelRuntime:
 
         idx = 0
         start_time = time.time()
-        for new_text in streamer:
-            # Yield control back to event loop, allowing WS messages to flush
-            await asyncio.sleep(0) 
-            elapsed_ms = (time.time() - start_time) * 1000.0
-            yield idx, new_text, elapsed_ms
-            idx += 1
-            start_time = time.time() # Reset timer for next token
+        
+        # We must use a thread executor to pull from the streamer 
+        # so we don't block the main asyncio event loop!
+        while True:
+            try:
+                # next() blocks on a threading.Condition, so we offload it
+                new_text = await asyncio.to_thread(next, streamer)
+                elapsed_ms = (time.time() - start_time) * 1000.0
+                yield idx, new_text, elapsed_ms
+                idx += 1
+                start_time = time.time()
+            except StopIteration:
+                break
