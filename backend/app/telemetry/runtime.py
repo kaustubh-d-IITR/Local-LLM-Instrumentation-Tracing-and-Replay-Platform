@@ -48,7 +48,11 @@ class ModelRuntime:
             tokenizer = AutoTokenizer.from_pretrained(hf_id)
             
             logger.info(f"Loading model {hf_id} to device {self.device}...")
-            model = AutoModelForCausalLM.from_pretrained(hf_id).to(self.device)
+            model = AutoModelForCausalLM.from_pretrained(
+                hf_id, 
+                torch_dtype=torch.bfloat16,
+                low_cpu_mem_usage=True
+            ).to(self.device)
             
             mem_after = process.memory_info().rss / 1024 / 1024
             logger.info(f"MEMORY LOG: {mem_after:.2f} MB after loading model")
