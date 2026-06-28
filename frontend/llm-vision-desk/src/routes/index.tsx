@@ -19,15 +19,13 @@ export const Route = createFileRoute("/")({
 });
 
 const MODELS = [
-  { id: "llama", name: "Llama 3.1 8B", layers: 32, heads: 32, hidden: 4096, params: "8B" },
-  { id: "gemma", name: "Gemma 2 9B", layers: 42, heads: 16, hidden: 3584, params: "9B" },
-  { id: "qwen", name: "Qwen 2.5 7B", layers: 28, heads: 28, hidden: 3584, params: "7B" },
-  { id: "mistral", name: "Mistral 7B", layers: 32, heads: 32, hidden: 4096, params: "7B" },
+  { id: "gpt2", name: "GPT-2", layers: 12, heads: 12, hidden: 768, params: "124M" },
+  { id: "tinyllama", name: "TinyLlama", layers: 22, heads: 32, hidden: 2048, params: "1.1B" },
 ];
 
 function SessionCreatePage() {
   const navigate = useNavigate();
-  const [model, setModel] = useState("llama");
+  const [model, setModel] = useState("gpt2");
   const [prompt, setPrompt] = useState("Explain how multi-head attention works in a transformer block.");
   
   const createSessionMutation = useCreateSession();
